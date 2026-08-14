@@ -8,11 +8,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Sparkles, Send, X } from "lucide-react";
+import { Sparkles, Send, X, ChevronDown, ChevronRight, CalendarClock, Receipt, FileText, Package, CheckCircle2 } from "lucide-react";
 import { get } from "firebase/database";
 import { parseISO, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import {
   type TableConfig as BaseTableConfig,
+  type RemindersBundle,
   isOverdue, isUnpaid, isPaid, labelFor,
   gatherReminders, reminderCount, formatRemindersText, ALERT_INTENT,
 } from "@/lib/reminders";
@@ -270,6 +271,118 @@ function renderChatText(text: string) {
   });
 }
 
+type AlertItem = { id: string; title: string; subtitle: string; badge: string; critical: boolean };
+type AlertSection = {
+  key: string;
+  title: string;
+  icon: typeof CalendarClock;
+  iconClass: string;
+  items: AlertItem[];
+  criticalCount: number;
+};
+
+// Overdue items past this many days are flagged as the more urgent "critical" tier.
+const CRITICAL_OVERDUE_DAYS = 7;
+
+const daysOverdue = (dueDate?: string): number => {
+  if (!dueDate) return 0;
+  try {
+    return Math.max(0, Math.floor((Date.now() - new Date(dueDate).getTime()) / 86400000));
+  } catch {
+    return 0;
+  }
+};
+
+// Turns the raw reminders bundle into the sectioned "alerts dashboard" shown when the
+// widget first opens — mirrors formatRemindersText() but structured for the accordion UI.
+function buildAlertSections(b: RemindersBundle): AlertSection[] {
+  const sections: AlertSection[] = [];
+
+  const dueTodayItems: AlertItem[] = [
+    ...b.dueTodayInvoices.map((r: any, i: number): AlertItem => ({
+      id: `dti-${i}`,
+      title: r.customerName || r.invoiceNumber || "Invoice",
+      subtitle: `${money(r.grandTotal)} · due today`,
+      badge: "AR",
+      critical: false,
+    })),
+    ...b.dueTodayBills.map((r: any, i: number): AlertItem => ({
+      id: `dtb-${i}`,
+      title: r.vendorName || r.billNumber || "Bill",
+      subtitle: `${money(r.grandTotal)} · due today`,
+      badge: "AP",
+      critical: false,
+    })),
+  ];
+  if (dueTodayItems.length) {
+    sections.push({ key: "due-today", title: "Due Today", icon: CalendarClock, iconClass: "bg-indigo-50 text-indigo-600", items: dueTodayItems, criticalCount: 0 });
+  }
+
+  const vendorBillItems: AlertItem[] = b.overdueBills.map((r: any, i: number): AlertItem => {
+    const days = daysOverdue(r.dueDate);
+    return {
+      id: `ob-${i}`,
+      title: r.vendorName || r.billNumber || "Bill",
+      subtitle: `${money(r.grandTotal)} · ${days}d overdue`,
+      badge: "AP",
+      critical: days > CRITICAL_OVERDUE_DAYS,
+    };
+  });
+  if (vendorBillItems.length) {
+    sections.push({
+      key: "overdue-bills",
+      title: "Overdue Vendor Bills",
+      icon: Receipt,
+      iconClass: "bg-red-50 text-red-600",
+      items: vendorBillItems,
+      criticalCount: vendorBillItems.filter((it) => it.critical).length,
+    });
+  }
+
+  const stockItems: AlertItem[] = [...b.fgAlerts, ...b.rawAlerts]
+    .sort((a, c) => (a.severity === "Critical" ? 0 : 1) - (c.severity === "Critical" ? 0 : 1))
+    .map((a, i): AlertItem => ({
+      id: `stock-${i}`,
+      title: a.label,
+      subtitle: `${a.qty}${a.uom ? ` ${a.uom}` : ""} left · ${a.severity}`,
+      badge: a.uom ? "FG" : "RM",
+      critical: a.severity === "Critical",
+    }));
+  if (stockItems.length) {
+    sections.push({
+      key: "low-stock",
+      title: "Low Stock",
+      icon: Package,
+      iconClass: "bg-orange-50 text-orange-600",
+      items: stockItems,
+      criticalCount: stockItems.filter((it) => it.critical).length,
+    });
+  }
+
+  const invoiceItems: AlertItem[] = b.overdueInvoices.map((r: any, i: number): AlertItem => {
+    const days = daysOverdue(r.dueDate);
+    return {
+      id: `oi-${i}`,
+      title: r.customerName || r.invoiceNumber || "Invoice",
+      subtitle: `${money(r.grandTotal)} · ${days}d overdue`,
+      badge: "AR",
+      critical: days > CRITICAL_OVERDUE_DAYS,
+    };
+  });
+  if (invoiceItems.length) {
+    sections.push({
+      key: "overdue-invoices",
+      title: "Overdue Invoices",
+      icon: FileText,
+      iconClass: "bg-amber-50 text-amber-600",
+      items: invoiceItems,
+      criticalCount: invoiceItems.filter((it) => it.critical).length,
+    });
+  }
+
+  return sections;
+}
+
 function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -278,9 +391,10 @@ function ChatWidget() {
 
   // Preloaded once so quick "name + field" questions (e.g. "arun salary") resolve instantly.
   const [employees, setEmployees] = useState<any[]>([]);
-  // Badge count on the launcher button + a one-time proactive summary the first time the panel opens.
+  // Badge count on the launcher button + data backing the alerts dashboard shown on open.
   const [alertCount, setAlertCount] = useState(0);
-  const announcedRef = useRef(false);
+  const [remindersBundle, setRemindersBundle] = useState<RemindersBundle | null>(null);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -288,7 +402,10 @@ function ChatWidget() {
       .then(setEmployees)
       .catch((err) => console.error("Failed to load employees for chat:", err));
     gatherReminders()
-      .then((b) => setAlertCount(reminderCount(b)))
+      .then((b) => {
+        setRemindersBundle(b);
+        setAlertCount(reminderCount(b));
+      })
       .catch((err) => console.error("Failed to load alert count:", err));
   }, []);
 
@@ -296,26 +413,7 @@ function ChatWidget() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, thinking, open]);
 
-  const toggleOpen = async () => {
-    const next = !open;
-    setOpen(next);
-    if (next && !announcedRef.current) {
-      announcedRef.current = true;
-      try {
-        const bundle = await gatherReminders();
-        const count = reminderCount(bundle);
-        setAlertCount(count);
-        if (count > 0) {
-          setMessages((m) => [
-            ...m,
-            { sender: "system", text: `⚠️ Heads up — ${count} item${count === 1 ? "" : "s"} need attention.\n\n${formatRemindersText(bundle)}` },
-          ]);
-        }
-      } catch {
-        // silent — user can still ask for alerts manually
-      }
-    }
-  };
+  const toggleOpen = () => setOpen((o) => !o);
 
   const answerForEmployee = (employee: any): string => {
     const name = employee.name;
@@ -453,6 +551,12 @@ function ChatWidget() {
     }, 0);
   };
 
+  // The alerts dashboard replaces the welcome bubble until the user actually starts chatting.
+  const showDashboard = messages.length <= 1;
+  const alertSections = remindersBundle ? buildAlertSections(remindersBundle) : [];
+  const totalAlertItems = alertSections.reduce((s, sec) => s + sec.items.length, 0);
+  const criticalAlertItems = alertSections.reduce((s, sec) => s + sec.criticalCount, 0);
+
   return (
     <>
       {/* Floating Chat Button */}
@@ -495,41 +599,120 @@ function ChatWidget() {
               </Button>
             </CardHeader>
             <CardContent className="flex flex-col gap-0 p-0">
-              <div className="h-96 overflow-y-auto bg-muted/30 p-3 text-sm space-y-3">
-                {messages.map((m, i) => (
-                  <div key={i} className={`flex items-end gap-2 ${m.sender === "user" ? "flex-row-reverse" : ""}`}>
-                    {m.sender === "system" && (
-                      <div className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center">
-                        <Sparkles className="h-3 w-3 text-white" />
+              <div className="h-[26rem] overflow-y-auto bg-muted/30 p-3 text-sm">
+                {showDashboard ? (
+                  remindersBundle === null ? (
+                    <div className="flex items-center justify-center h-full text-muted-foreground text-xs">Loading your alerts…</div>
+                  ) : totalAlertItems === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center gap-2 px-6">
+                      <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+                      <p className="text-sm font-medium text-gray-900">All caught up</p>
+                      <p className="text-xs text-muted-foreground">Stock levels and payments all look healthy.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="rounded-2xl bg-amber-50 border border-amber-100 p-3.5 flex items-start gap-3">
+                        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
+                          <Sparkles className="h-4 w-4 text-white" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900 leading-tight">
+                            Heads up — {totalAlertItems} item{totalAlertItems === 1 ? "" : "s"} need attention
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {criticalAlertItems} critical · across {alertSections.length} area{alertSections.length === 1 ? "" : "s"} · synced just now
+                          </p>
+                        </div>
+                      </div>
+
+                      {alertSections.map((section) => {
+                        const isExpanded = expandedSection === section.key;
+                        const Icon = section.icon;
+                        return (
+                          <div key={section.key} className="rounded-2xl bg-white border border-border/60 overflow-hidden">
+                            <button
+                              onClick={() => setExpandedSection(isExpanded ? null : section.key)}
+                              className="w-full flex items-center gap-3 p-3 text-left"
+                            >
+                              <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${section.iconClass}`}>
+                                <Icon className="h-4 w-4" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-gray-900 leading-tight">{section.title}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {section.items.length} item{section.items.length === 1 ? "" : "s"}
+                                  {section.criticalCount > 0 ? ` · ${section.criticalCount} critical` : ""}
+                                </p>
+                              </div>
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                              )}
+                            </button>
+                            {isExpanded && (
+                              <div className="border-t border-border/60 divide-y divide-border/60">
+                                {section.items.map((item) => (
+                                  <div key={item.id} className="flex items-center gap-3 px-3.5 py-2.5">
+                                    <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${item.critical ? "bg-red-500" : "bg-amber-500"}`} />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm text-gray-900 truncate">{item.title}</p>
+                                      <p className="text-xs text-muted-foreground truncate">{item.subtitle}</p>
+                                    </div>
+                                    <span
+                                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+                                        item.critical ? "bg-red-50 text-red-600" : "bg-primary/10 text-primary"
+                                      }`}
+                                    >
+                                      {item.badge}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : (
+                  <div className="space-y-3">
+                    {messages.map((m, i) => (
+                      <div key={i} className={`flex items-end gap-2 ${m.sender === "user" ? "flex-row-reverse" : ""}`}>
+                        {m.sender === "system" && (
+                          <div className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center">
+                            <Sparkles className="h-3 w-3 text-white" />
+                          </div>
+                        )}
+                        <div
+                          className={`px-3.5 py-2.5 max-w-[85%] whitespace-pre-wrap leading-relaxed shadow-sm ${
+                            m.sender === "user"
+                              ? "bg-gradient-to-br from-primary to-indigo-600 text-white rounded-2xl rounded-br-sm"
+                              : "bg-white text-gray-800 border border-border/60 rounded-2xl rounded-bl-sm"
+                          }`}
+                        >
+                          {renderChatText(m.text)}
+                        </div>
+                      </div>
+                    ))}
+                    {thinking && (
+                      <div className="flex items-end gap-2">
+                        <div className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center">
+                          <Sparkles className="h-3 w-3 text-white" />
+                        </div>
+                        <div className="px-3.5 py-3 rounded-2xl rounded-bl-sm bg-white border border-border/60 flex items-center gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-0.3s]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-0.15s]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce" />
+                        </div>
                       </div>
                     )}
-                    <div
-                      className={`px-3.5 py-2.5 max-w-[85%] whitespace-pre-wrap leading-relaxed shadow-sm ${
-                        m.sender === "user"
-                          ? "bg-gradient-to-br from-primary to-indigo-600 text-white rounded-2xl rounded-br-sm"
-                          : "bg-white text-gray-800 border border-border/60 rounded-2xl rounded-bl-sm"
-                      }`}
-                    >
-                      {renderChatText(m.text)}
-                    </div>
-                  </div>
-                ))}
-                {thinking && (
-                  <div className="flex items-end gap-2">
-                    <div className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center">
-                      <Sparkles className="h-3 w-3 text-white" />
-                    </div>
-                    <div className="px-3.5 py-3 rounded-2xl rounded-bl-sm bg-white border border-border/60 flex items-center gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-0.3s]" />
-                      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-0.15s]" />
-                      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce" />
-                    </div>
                   </div>
                 )}
                 <div ref={bottomRef} />
               </div>
 
-              {messages.length <= 2 && (
+              {messages.length <= 1 && (
                 <div className="flex flex-wrap gap-1.5 px-3 py-2 border-t border-border/60 bg-white">
                   {suggestions.map((s) => (
                     <button
