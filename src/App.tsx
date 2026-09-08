@@ -158,6 +158,7 @@ import BomView from "./modules/sales/BomView";
 import Pf from "./modules/hr/Pf";
 import Esi from "./modules/hr/Esi";
 import Otrate from "./modules/hr/Otrate";
+import DocumentCenter from "./modules/documents/DocumentCenter";
 
 // Query Client
 const queryClient = new QueryClient();
@@ -1015,6 +1016,16 @@ function App() {
                 <Route path="approvals"    element={<VaultApprovals />} />
                 <Route path="access"       element={<VaultAccessControl />} />
               </Route>
+
+              {/* DOCUMENT CENTER MODULE */}
+              <Route
+                path="/documents"
+                element={
+                  <ProtectedRoute module="documents">
+                    <DocumentCenter />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Stub Routes */}
               <Route

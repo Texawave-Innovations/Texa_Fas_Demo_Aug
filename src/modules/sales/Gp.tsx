@@ -243,7 +243,7 @@ const formatAddress = (addr?: Address | null) => {
 };
 
 
-const RGPPrintTemplate: React.FC<{ rgp: ReturnableGatePass }> = ({ rgp }) => {
+export const RGPPrintTemplate: React.FC<{ rgp: ReturnableGatePass }> = ({ rgp }) => {
   const items = rgp.lineItems || [];
   const pages = buildRGPPages(items);
   const totalPages = pages.length;

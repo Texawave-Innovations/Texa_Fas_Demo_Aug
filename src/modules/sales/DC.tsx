@@ -149,7 +149,7 @@ const formatAddress = (addr?: Address | null) => {
 
 // ---------------------- PRINT TEMPLATE ----------------------
 
-const DCPrintTemplate: React.FC<{ dc: DeliveryChallan }> = ({ dc }) => {
+export const DCPrintTemplate: React.FC<{ dc: DeliveryChallan }> = ({ dc }) => {
   const items = dc.lineItems || [];
   const pages = buildDCPages(items);
   const totalPages = pages.length;

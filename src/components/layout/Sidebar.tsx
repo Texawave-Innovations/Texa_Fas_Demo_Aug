@@ -5,6 +5,7 @@ import {
   LayoutDashboard, ShoppingCart, Users, ClipboardCheck,
   Archive, Server, Settings, ChevronLeft, ChevronRight,
   LogOut, Package, Truck, Landmark, Wrench, History, FolderLock,
+  FolderArchive,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -16,19 +17,20 @@ interface MenuItem {
 }
 
 const menuItems: MenuItem[] = [
-  { id: 'dashboard', label: 'Dashboard',   icon: LayoutDashboard, path: '/dashboard' },
-  { id: 'sales',     label: 'Sales',        icon: ShoppingCart,    path: '/sales' },
-  { id: 'hr',        label: 'HR',           icon: Users,           path: '/hr/dashboard' },
-  { id: 'production',label: 'Production',   icon: Archive,         path: '/production' },
-  { id: 'quality',   label: 'Quality',      icon: ClipboardCheck,  path: '/quality' },
-  { id: 'inventory', label: 'Inventory',    icon: Package,         path: '/inventory' },
-  { id: 'dispatch',  label: 'Dispatch',     icon: Truck,           path: '/dispatch' },
-  { id: 'finance',   label: 'Accounts',     icon: Landmark,        path: '/finance' },
-  { id: 'cmms',      label: 'Maintenance',  icon: Wrench,          path: '/cmms' },
-  { id: 'vault',     label: 'Document Vault', icon: FolderLock,    path: '/vault' },
-  { id: 'master',    label: 'Master Lists', icon: Server,          path: '/master' },
-  { id: 'audit',     label: 'Audit Trail',  icon: History,         path: '/audit' },
-  { id: 'settings',  label: 'Settings',     icon: Settings,        path: '/settings' },
+  { id: 'dashboard', label: 'Dashboard',       icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'sales',     label: 'Sales',           icon: ShoppingCart,    path: '/sales' },
+  { id: 'hr',        label: 'HR',              icon: Users,           path: '/hr/dashboard' },
+  { id: 'production',label: 'Production',      icon: Archive,         path: '/production' },
+  { id: 'quality',   label: 'Quality',         icon: ClipboardCheck,  path: '/quality' },
+  { id: 'inventory', label: 'Inventory',       icon: Package,         path: '/inventory' },
+  { id: 'dispatch',  label: 'Dispatch',        icon: Truck,           path: '/dispatch' },
+  { id: 'finance',   label: 'Accounts',        icon: Landmark,        path: '/finance' },
+  { id: 'cmms',      label: 'Maintenance',     icon: Wrench,          path: '/cmms' },
+  { id: 'documents', label: 'Document Center', icon: FolderArchive,   path: '/documents' },
+  { id: 'vault',     label: 'Document Vault',  icon: FolderLock,      path: '/vault' },
+  { id: 'master',    label: 'Master Lists',    icon: Server,          path: '/master' },
+  { id: 'audit',     label: 'Audit Trail',     icon: History,         path: '/audit' },
+  { id: 'settings',  label: 'Settings',        icon: Settings,        path: '/settings' },
 ];
 
 export const Sidebar = () => {

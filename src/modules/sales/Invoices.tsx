@@ -55,7 +55,7 @@ const buildInvoicePages = (items: any[]): any[][] => {
 }
 
 // Professional Invoice Template - A4 Portrait, Tally-style format
-const FullInvoiceTemplate = ({ invoice }: { invoice: any }) => {
+export const FullInvoiceTemplate = ({ invoice }: { invoice: any }) => {
   const currency = invoice.currency || "INR";
   const symbol = CURRENCY_SYMBOLS[currency] || "₹";
 

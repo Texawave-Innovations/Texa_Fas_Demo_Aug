@@ -25,14 +25,14 @@ const USERS: Record<string, { password: string; role: UserRole; name: string }> 
 
 // Default role-based access control (fallback if no custom config saved)
 const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
-  admin:       ['dashboard', 'sales', 'hr', 'quality', 'production', 'inventory', 'dispatch', 'finance', 'cmms', 'vault', 'master', 'audit', 'settings', 'reports'],
-  sales:       ['dashboard', 'sales'],
-  hr:          ['dashboard', 'hr'],
-  accountant:  ['dashboard', 'finance'],
-  manager:     ['dashboard', 'production', 'quality', 'inventory', 'dispatch', 'cmms', 'vault'],
-  quality:     ['dashboard', 'quality', 'vault'],
-  production:  ['dashboard', 'production', 'vault'],
-  maintenance: ['dashboard', 'cmms', 'vault'],
+  admin:       ['dashboard', 'sales', 'hr', 'quality', 'production', 'inventory', 'dispatch', 'finance', 'cmms', 'documents', 'vault', 'master', 'audit', 'settings', 'reports'],
+  sales:       ['dashboard', 'sales', 'documents'],
+  hr:          ['dashboard', 'hr', 'documents'],
+  accountant:  ['dashboard', 'finance', 'documents'],
+  manager:     ['dashboard', 'production', 'quality', 'inventory', 'dispatch', 'cmms', 'documents', 'vault'],
+  quality:     ['dashboard', 'quality', 'documents', 'vault'],
+  production:  ['dashboard', 'production', 'documents', 'vault'],
+  maintenance: ['dashboard', 'cmms', 'documents', 'vault'],
 };
 
 const loadSavedPermissions = (): Record<string, string[]> => {
@@ -48,6 +48,7 @@ const loadSavedPermissions = (): Record<string, string[]> => {
       if (version < 3) carryForward.push('finance', 'cmms');
       if (version < 4) carryForward.push('audit');
       if (version < 5) carryForward.push('vault');
+      if (version < 6) carryForward.push('documents');
 
       const merged: Record<string, string[]> = {};
       for (const role of Object.keys(DEFAULT_ROLE_PERMISSIONS)) {
