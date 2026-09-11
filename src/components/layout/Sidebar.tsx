@@ -5,7 +5,7 @@ import {
   LayoutDashboard, ShoppingCart, Users, ClipboardCheck,
   Archive, Server, Settings, ChevronLeft, ChevronRight,
   LogOut, Package, Truck, Landmark, Wrench, History, FolderLock,
-  FolderArchive,
+  FolderArchive, FolderKanban,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -21,6 +21,7 @@ const menuItems: MenuItem[] = [
   { id: 'sales',     label: 'Sales',           icon: ShoppingCart,    path: '/sales' },
   { id: 'hr',        label: 'HR',              icon: Users,           path: '/hr/dashboard' },
   { id: 'production',label: 'Production',      icon: Archive,         path: '/production' },
+  { id: 'projects',  label: 'Projects',        icon: FolderKanban,    path: '/projects' },
   { id: 'quality',   label: 'Quality',         icon: ClipboardCheck,  path: '/quality' },
   { id: 'inventory', label: 'Inventory',       icon: Package,         path: '/inventory' },
   { id: 'dispatch',  label: 'Dispatch',        icon: Truck,           path: '/dispatch' },

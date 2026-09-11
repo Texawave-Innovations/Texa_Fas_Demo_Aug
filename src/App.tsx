@@ -161,6 +161,13 @@ import Esi from "./modules/hr/Esi";
 import Otrate from "./modules/hr/Otrate";
 import DocumentCenter from "./modules/documents/DocumentCenter";
 
+// Projects Module
+import ProjectsLayout from "./modules/projects/ProjectsLayout";
+import LiveRuns from "./modules/projects/LiveRuns";
+import ManualRunLog from "./modules/projects/ManualRunLog";
+import WageSummary from "./modules/projects/WageSummary";
+import ProjectMasters from "./modules/projects/ProjectMasters";
+
 // Query Client
 const queryClient = new QueryClient();
 
@@ -1029,15 +1036,20 @@ function App() {
                 }
               />
 
-              {/* Stub Routes */}
+              {/* PROJECTS & MACHINE COSTING MODULE */}
               <Route
                 path="/projects"
                 element={
                   <ProtectedRoute module="projects">
-                    <StubPage title="Projects Module" description="Coming soon..." />
+                    <ProjectsLayout />
                   </ProtectedRoute>
                 }
-              />
+              >
+                <Route index element={<LiveRuns />} />
+                <Route path="manual-log" element={<ManualRunLog />} />
+                <Route path="summary" element={<WageSummary />} />
+                <Route path="masters" element={<ProjectMasters />} />
+              </Route>
               <Route
                 path="/settings"
                 element={

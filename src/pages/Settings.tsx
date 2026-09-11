@@ -24,6 +24,7 @@ import {
   Globe,
   History,
   FolderLock,
+  FolderKanban,
 } from "lucide-react"
 import { getRecord, updateRecord, createRecord, logAudit } from "@/services/firebase"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -36,6 +37,7 @@ const MENU_ITEMS = [
   { id: "sales",     label: "Sales",      icon: ShoppingCart },
   { id: "hr",        label: "HR",         icon: Users },
   { id: "production",label: "Production", icon: Archive },
+  { id: "projects",  label: "Projects",   icon: FolderKanban },
   { id: "quality",   label: "Quality",    icon: ClipboardCheck },
   { id: "inventory", label: "Inventory",    icon: Package },
   { id: "dispatch",  label: "Dispatch",     icon: Truck },
@@ -61,13 +63,13 @@ const ROLES = [
 
 // Default permissions (fallback)
 const DEFAULT_PERMISSIONS: Record<string, string[]> = {
-  admin:       ["dashboard", "sales", "hr", "quality", "production", "inventory", "dispatch", "finance", "cmms", "vault", "master", "audit", "settings"],
+  admin:       ["dashboard", "sales", "hr", "quality", "production", "projects", "inventory", "dispatch", "finance", "cmms", "vault", "master", "audit", "settings"],
   sales:       ["dashboard", "sales"],
   hr:          ["dashboard", "hr"],
   accountant:  ["dashboard", "finance"],
-  manager:     ["dashboard", "production", "quality", "inventory", "dispatch", "cmms", "vault"],
+  manager:     ["dashboard", "production", "projects", "quality", "inventory", "dispatch", "cmms", "vault"],
   quality:     ["dashboard", "quality", "vault"],
-  production:  ["dashboard", "production", "vault"],
+  production:  ["dashboard", "production", "projects", "vault"],
   maintenance: ["dashboard", "cmms", "vault"],
 }
 
