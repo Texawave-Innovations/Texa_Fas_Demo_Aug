@@ -113,6 +113,7 @@ import Banking from "./modules/accounts/Banking";
 import CurrencyAdjustments from "./modules/accounts/CurrencyAdjustments";
 import ManualJournals from "./modules/accounts/ManualJournals";
 import AccountsReports from "./modules/accounts/AccountsReports";
+import FixedAssets from "./modules/accounts/FixedAssets";
 
 // CMMS Module
 import CMMSLayout from "./modules/cmms/CMMSLayout";
@@ -979,6 +980,7 @@ function App() {
                 <Route path="invoicing"             element={<AccountsInvoicing />} />
                 <Route path="expenses"              element={<Expenses />} />
                 <Route path="chart-of-accounts"     element={<ChartOfAccounts />} />
+                <Route path="fixed-assets"          element={<FixedAssets />} />
                 <Route path="banking"               element={<Banking />} />
                 <Route path="currency-adjustments"  element={<CurrencyAdjustments />} />
                 <Route path="journals"              element={<ManualJournals />} />

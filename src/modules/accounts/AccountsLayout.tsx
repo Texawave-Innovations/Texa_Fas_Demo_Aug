@@ -3,6 +3,7 @@ import { Layout } from '@/components/layout/Layout';
 import { LiveClock } from '@/components/layout/LiveClock';
 import {
   LayoutDashboard, FileText, Receipt, BookOpen, Landmark, RefreshCw, BookText, BarChart3,
+  Building2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOrgSettings } from '@/context/OrgSettingsContext';
@@ -12,6 +13,7 @@ const tabs = [
   { path: '/finance/invoicing',           label: 'Invoicing',          icon: FileText,        end: false },
   { path: '/finance/expenses',            label: 'Expenses & Bills',   icon: Receipt,         end: false },
   { path: '/finance/chart-of-accounts',   label: 'Chart of Accounts',  icon: BookOpen,        end: false },
+  { path: '/finance/fixed-assets',        label: 'Fixed Assets',       icon: Building2,       end: false },
   { path: '/finance/banking',             label: 'Banking',            icon: Landmark,        end: false },
   { path: '/finance/currency-adjustments',label: 'Currency Adjustments', icon: RefreshCw,     end: false },
   { path: '/finance/journals',            label: 'Manual Journals',    icon: BookText,        end: false },

@@ -7,11 +7,19 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, Wallet, TrendingDown, Scale, TrendingUp, ArrowDownRight } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Plus, Trash2, Wallet, TrendingDown, Scale, TrendingUp, ArrowDownRight,
+  BookOpen, Calendar, ArrowRight, ExternalLink,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { database } from '@/services/firebase';
 import { ref, get, set } from 'firebase/database';
 import { createRecord, updateRecord, deleteRecord, getAllRecords } from '@/services/firebase';
+import { useOrgSettings } from '@/context/OrgSettingsContext';
+import { formatCurrency } from '@/lib/countryConfig';
+import { format, startOfMonth, subMonths } from 'date-fns';
+import { getAccountLedger, AccountLedgerReport } from '@/services/ledgerTrialBalanceService';
 import type { AccountType, ChartOfAccount } from '@/types/accounts';
 
 const TYPE_META: Record<AccountType, { icon: any; color: string; bg: string }> = {
@@ -28,8 +36,10 @@ const DEFAULT_ACCOUNTS: Array<Omit<ChartOfAccount, 'id' | 'createdAt'>> = [
   { code: '1000', name: 'Cash in Hand', type: 'Asset', subType: 'Current Asset', status: 'active', isSystem: true },
   { code: '1010', name: 'Bank Accounts', type: 'Asset', subType: 'Bank', status: 'active', isSystem: true },
   { code: '1200', name: 'Accounts Receivable', type: 'Asset', subType: 'Current Asset', status: 'active', isSystem: true },
+  { code: '1300', name: 'Supplier Advances', type: 'Asset', subType: 'Current Asset', status: 'active', isSystem: true },
   { code: '1400', name: 'Inventory', type: 'Asset', subType: 'Current Asset', status: 'active', isSystem: true },
   { code: '1500', name: 'Fixed Assets', type: 'Asset', subType: 'Fixed Asset', status: 'active', isSystem: true },
+  { code: '1510', name: 'Accumulated Depreciation', type: 'Asset', subType: 'Fixed Asset Contra', status: 'active', isSystem: true },
   { code: '2000', name: 'Accounts Payable', type: 'Liability', subType: 'Current Liability', status: 'active', isSystem: true },
   { code: '2100', name: 'Taxes Payable', type: 'Liability', subType: 'Current Liability', status: 'active', isSystem: true },
   { code: '2200', name: 'Accrued Expenses', type: 'Liability', subType: 'Current Liability', status: 'active', isSystem: true },
@@ -38,17 +48,29 @@ const DEFAULT_ACCOUNTS: Array<Omit<ChartOfAccount, 'id' | 'createdAt'>> = [
   { code: '4000', name: 'Sales Revenue', type: 'Income', subType: 'Operating Income', status: 'active', isSystem: true },
   { code: '4100', name: 'Other Income', type: 'Income', subType: 'Other Income', status: 'active', isSystem: true },
   { code: '5000', name: 'Cost of Goods Sold', type: 'Expense', subType: 'Cost of Sales', status: 'active', isSystem: true },
+  { code: '5020', name: 'Subcontracting & Job Work Charges', type: 'Expense', subType: 'Cost of Sales', status: 'active', isSystem: true },
+  { code: '5030', name: 'Freight & Inward Charges', type: 'Expense', subType: 'Cost of Sales', status: 'active', isSystem: true },
   { code: '5100', name: 'Operating Expenses', type: 'Expense', subType: 'Operating Expense', status: 'active', isSystem: true },
   { code: '5200', name: 'Salaries & Wages', type: 'Expense', subType: 'Operating Expense', status: 'active', isSystem: true },
   { code: '5300', name: 'Rent Expense', type: 'Expense', subType: 'Operating Expense', status: 'active', isSystem: true },
   { code: '5400', name: 'Utilities', type: 'Expense', subType: 'Operating Expense', status: 'active', isSystem: true },
+  { code: '5500', name: 'Depreciation Expense', type: 'Expense', subType: 'Operating Expense', status: 'active', isSystem: true },
 ];
 
 export default function ChartOfAccounts() {
+  const { country } = useOrgSettings();
   const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ code: '', name: '', type: 'Asset' as AccountType, subType: '', openingBalance: '' });
+
+  // ---- Account Ledger Drilldown State ----
+  const [ledgerDialogOpen, setLedgerDialogOpen] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<ChartOfAccount | null>(null);
+  const [ledgerReport, setLedgerReport] = useState<AccountLedgerReport | null>(null);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerFromDate, setLedgerFromDate] = useState(format(startOfMonth(subMonths(new Date(), 2)), 'yyyy-MM-dd'));
+  const [ledgerToDate, setLedgerToDate] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   useEffect(() => {
     initAndLoad();
@@ -58,8 +80,6 @@ export default function ChartOfAccounts() {
     const coaRef = ref(database, 'accounts/chartOfAccounts');
     const snap = await get(coaRef);
     if (!snap.exists()) {
-      // Seed default COA on first visit — migrates the old flat FinanceMaster
-      // lists into a proper ledger tree without deleting anything.
       const seeded: Record<string, any> = {};
       DEFAULT_ACCOUNTS.forEach((acc) => {
         const key = `acc_${acc.code}`;
@@ -125,11 +145,47 @@ export default function ChartOfAccounts() {
     }
   };
 
+  // ---- Open Ledger Drill-down ----
+  const handleOpenLedger = async (acc: ChartOfAccount) => {
+    setSelectedAccount(acc);
+    setLedgerDialogOpen(true);
+    setLedgerLoading(true);
+    try {
+      const rep = await getAccountLedger({
+        accountId: acc.id,
+        fromDate: ledgerFromDate,
+        toDate: ledgerToDate,
+      });
+      setLedgerReport(rep);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to load ledger');
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
+  const handleRefreshLedger = async () => {
+    if (!selectedAccount) return;
+    setLedgerLoading(true);
+    try {
+      const rep = await getAccountLedger({
+        accountId: selectedAccount.id,
+        fromDate: ledgerFromDate,
+        toDate: ledgerToDate,
+      });
+      setLedgerReport(rep);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to refresh ledger');
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {accounts.length} accounts across {ACCOUNT_TYPES.length} categories
+          {accounts.length} accounts across {ACCOUNT_TYPES.length} categories · Click any account to inspect its General Ledger
         </p>
         <Button size="sm" onClick={() => setDialogOpen(true)}>
           <Plus className="h-4 w-4 mr-1.5" />Add Account
@@ -161,15 +217,34 @@ export default function ChartOfAccounts() {
                       <p className="text-xs text-muted-foreground py-4 px-4">No accounts in this category.</p>
                     ) : (
                       list.map((acc) => (
-                        <div key={acc.id} className={`flex items-center justify-between px-4 py-2.5 ${acc.status === 'inactive' ? 'opacity-50' : ''}`}>
-                          <div className="min-w-0">
+                        <div
+                          key={acc.id}
+                          className={`flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors ${acc.status === 'inactive' ? 'opacity-50' : ''}`}
+                        >
+                          <button
+                            onClick={() => handleOpenLedger(acc)}
+                            className="min-w-0 text-left flex-1 group"
+                            title="Click to view Account Ledger"
+                          >
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] font-mono text-muted-foreground">{acc.code}</span>
-                              <span className="text-sm font-medium truncate">{acc.name}</span>
+                              <span className="text-sm font-medium truncate group-hover:text-primary transition-colors">
+                                {acc.name}
+                              </span>
                             </div>
                             <span className="text-[10px] text-muted-foreground">{acc.subType}</span>
-                          </div>
+                          </button>
+
                           <div className="flex items-center gap-2 shrink-0">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs text-muted-foreground hover:text-primary"
+                              onClick={() => handleOpenLedger(acc)}
+                              title="View Ledger"
+                            >
+                              <BookOpen className="h-3 w-3 mr-1" />Ledger
+                            </Button>
                             <Switch checked={acc.status === 'active'} onCheckedChange={() => toggleStatus(acc)} className="scale-75" />
                             {!acc.isSystem && (
                               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeAccount(acc)}>
@@ -188,6 +263,7 @@ export default function ChartOfAccounts() {
         </div>
       )}
 
+      {/* Add Account Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Ledger Account</DialogTitle></DialogHeader>
@@ -223,6 +299,140 @@ export default function ChartOfAccounts() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={saveAccount}>Save Account</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Account Ledger Register Modal */}
+      <Dialog open={ledgerDialogOpen} onOpenChange={setLedgerDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-primary" />
+                <span>Account Ledger: {selectedAccount ? `${selectedAccount.code} - ${selectedAccount.name}` : ''}</span>
+              </div>
+              {selectedAccount && <Badge variant="secondary">{selectedAccount.type} · {selectedAccount.subType}</Badge>}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            {/* Filter Bar */}
+            <div className="flex items-center justify-between p-3 bg-muted/40 rounded-lg gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <div>
+                  <span className="text-[10px] text-muted-foreground block">From Date</span>
+                  <Input
+                    type="date"
+                    value={ledgerFromDate}
+                    onChange={(e) => setLedgerFromDate(e.target.value)}
+                    className="h-7 text-xs bg-white w-32"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground block">To Date</span>
+                  <Input
+                    type="date"
+                    value={ledgerToDate}
+                    onChange={(e) => setLedgerToDate(e.target.value)}
+                    className="h-7 text-xs bg-white w-32"
+                  />
+                </div>
+                <div className="flex items-end pt-3.5">
+                  <Button size="sm" className="h-7 text-xs" onClick={handleRefreshLedger} disabled={ledgerLoading}>
+                    {ledgerLoading ? 'Loading...' : 'Filter'}
+                  </Button>
+                </div>
+              </div>
+
+              {ledgerReport && (
+                <div className="flex items-center gap-4 text-xs font-semibold">
+                  <div>
+                    <span className="text-muted-foreground font-normal block text-[10px]">Opening:</span>
+                    <span>{formatCurrency(ledgerReport.openingBalance, country)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground font-normal block text-[10px]">Net Closing:</span>
+                    <span className="text-primary">{formatCurrency(ledgerReport.closingBalance, country)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Ledger Table */}
+            {ledgerLoading ? (
+              <p className="text-center py-8 text-muted-foreground">Loading ledger transactions...</p>
+            ) : !ledgerReport || ledgerReport.lines.length === 0 ? (
+              <div className="text-center py-8 border rounded-md bg-muted/20">
+                <p className="text-muted-foreground">No posted journal entries found for this account in the selected period.</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Opening Balance: {formatCurrency(ledgerReport?.openingBalance || 0, country)}
+                </p>
+              </div>
+            ) : (
+              <div className="border rounded-md overflow-hidden">
+                <Table>
+                  <TableHeader className="bg-muted/40 text-xs">
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Voucher #</TableHead>
+                      <TableHead>Narration</TableHead>
+                      <TableHead className="text-right">Debit</TableHead>
+                      <TableHead className="text-right">Credit</TableHead>
+                      <TableHead className="text-right font-bold">Balance</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="text-xs">
+                    {/* Opening Balance Row */}
+                    <TableRow className="bg-muted/20 font-medium">
+                      <TableCell>{ledgerReport.fromDate}</TableCell>
+                      <TableCell><Badge variant="outline" className="text-[10px]">Opening</Badge></TableCell>
+                      <TableCell>Opening balance as of {ledgerReport.fromDate}</TableCell>
+                      <TableCell className="text-right">—</TableCell>
+                      <TableCell className="text-right">—</TableCell>
+                      <TableCell className="text-right font-bold">
+                        {formatCurrency(ledgerReport.openingBalance, country)}
+                      </TableCell>
+                    </TableRow>
+
+                    {ledgerReport.lines.map((l, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>{l.date}</TableCell>
+                        <TableCell className="font-mono font-semibold">{l.voucherNumber}</TableCell>
+                        <TableCell className="max-w-[220px] truncate" title={l.narration}>
+                          {l.narration || 'General ledger posting'}
+                        </TableCell>
+                        <TableCell className="text-right text-blue-700 font-medium">
+                          {l.debit > 0 ? formatCurrency(l.debit, country) : '—'}
+                        </TableCell>
+                        <TableCell className="text-right text-red-700 font-medium">
+                          {l.credit > 0 ? formatCurrency(l.credit, country) : '—'}
+                        </TableCell>
+                        <TableCell className="text-right font-bold">
+                          {formatCurrency(l.runningBalance, country)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+
+                    {/* Closing Balance Row */}
+                    <TableRow className="bg-muted/40 font-bold border-t-2">
+                      <TableCell>{ledgerReport.toDate}</TableCell>
+                      <TableCell><Badge variant="secondary" className="text-[10px]">Closing</Badge></TableCell>
+                      <TableCell>Totals &amp; Net Closing Balance</TableCell>
+                      <TableCell className="text-right text-blue-700">
+                        {formatCurrency(ledgerReport.totalDebit, country)}
+                      </TableCell>
+                      <TableCell className="text-right text-red-700">
+                        {formatCurrency(ledgerReport.totalCredit, country)}
+                      </TableCell>
+                      <TableCell className="text-right text-purple-900 text-sm">
+                        {formatCurrency(ledgerReport.closingBalance, country)}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
